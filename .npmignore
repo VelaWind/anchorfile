@@ -1,0 +1,27 @@
+# Source — TypeScript, not needed at runtime
+src/
+
+# Build config — not needed at runtime
+tsconfig.json
+
+# Internal project context
+CLAUDE.md
+
+# Lockfile — not needed in published package
+package-lock.json
+
+# Git
+.gitignore
+.git/
+
+# Tests
+**/*.test.js
+**/*.test.ts
+**/*.spec.js
+**/*.spec.ts
+test/
+tests/
+__tests__/
+
+# Packed tarballs
+*.tgz
