@@ -6,12 +6,16 @@ import * as path from 'path';
 import { scanRepo } from './scanner';
 import { generateClaudeMd } from './generator';
 
+const { version } = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
+);
+
 const program = new Command();
 
 program
   .name('anchorfile')
   .description('Generate a CLAUDE.md context file for AI coding agents.')
-  .version('0.1.0');
+  .version(version);
 
 program
   .command('init')

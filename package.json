@@ -1,6 +1,6 @@
 {
   "name": "anchorfile",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scan a software repository and generate a CLAUDE.md context file for AI coding agents.",
   "main": "dist/index.js",
   "bin": {
