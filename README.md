@@ -31,7 +31,12 @@ Everything below is read from the filesystem; nothing is inferred by a model.
 - **Frameworks**, matched by exact dependency name against `package.json` and `requirements.txt`: React, Next.js, Vue, Nuxt, Svelte, Express, Fastify, NestJS, Prisma, tRPC, Tailwind CSS, Vite, Astro, Pygame, Flask, Django, FastAPI, NumPy, Pandas, SQLAlchemy.
 - **Package manager** from the lockfile: Yarn, pnpm, npm, or pip (`requirements.txt`, `pyproject.toml`, `setup.py`).
 - **Test framework**: Jest, Vitest, Mocha, pytest, Cypress or Playwright, found as a dependency, named inside an npm script, or as `test_*.py` / `*_test.py` files in the root or `tests/`.
-- **Linter**: Biome, ESLint (dependency or any `.eslintrc*` file), or Prettier.
+- **Linter**, from `devDependencies` only: Biome, ESLint, or Prettier. ESLint is
+  also detected from a legacy config file, but only these six exact names:
+  `.eslintrc`, `.eslintrc.js`, `.eslintrc.cjs`, `.eslintrc.json`, `.eslintrc.yml`,
+  `.eslintrc.yaml`. Flat config (`eslint.config.js`), the default since ESLint 9,
+  is not recognised, so a repository using it and not listing eslint in
+  `devDependencies` reports no linter.
 - **Docker and CI**: a `Dockerfile`, and `.github/workflows` or `.circleci`.
 - **Layout**: top-level folders (skipping `node_modules`, `.git`, `dist`, `build`, `.next`) and key files from a fixed list (`package.json`, `tsconfig.json`, `Dockerfile`, `docker-compose.yml`, `.env.example`, `README.md`, the Vite and Next configs, `prisma/schema.prisma`, `requirements.txt`, `pyproject.toml`, `setup.py`, `main.py`, `config.py`, `manage.py`).
 - **Scripts and dependencies**: every npm script with its command, and the dependency and devDependency name lists.
