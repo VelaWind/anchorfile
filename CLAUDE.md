@@ -12,11 +12,13 @@ anchorfile — Scan a software repository and generate a CLAUDE.md context file 
 - **Package Manager:** npm
 - **Linter:** None
 - **Docker:** No
-- **CI/CD:** No
+- **CI/CD:** Yes
 
 ## Project Structure
 Top-level folders:
+- .github/
 - src/
+- test/
 
 Key files present:
 - package.json
@@ -25,20 +27,23 @@ Key files present:
 
 ## Available Scripts
 - `build`: tsc
-- `prepublishOnly`: npm run build
+- `typecheck`: tsc --noEmit -p tsconfig.test.json
+- `test`: npm run build && vitest run
+- `prepublishOnly`: npm run typecheck && npm test
 
 ## Dependencies
 **Production:** commander
-**Dev:** @types/node, typescript
+**Dev:** @types/node, typescript, vitest
 
 ## Testing
-No test framework detected. Consider adding tests.
+Tests present. Framework: Vitest
 
 ## Key Conventions
 <!-- Anchorfile detected these automatically. Expand this section manually with project-specific conventions. -->
 - Package manager is npm — do not use others
 - Primary language is TypeScript
 - Use strict TypeScript — tsconfig strict mode
+- Tests via Vitest — maintain coverage
 
 ## What to Avoid
 <!-- Fill this in manually with known footguns or areas of tech debt -->
