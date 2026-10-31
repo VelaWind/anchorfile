@@ -1,0 +1,6 @@
+{
+  "name": "js-flat-eslint",
+  "scripts": { "test": "mocha" },
+  "dependencies": { "express": "^4.0.0" },
+  "devDependencies": { "prettier": "^3.0.0" }
+}

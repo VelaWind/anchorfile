@@ -240,7 +240,10 @@ export async function scanRepo(rootPath: string, verbose: boolean): Promise<Repo
   try {
     folderStructure = fs.readdirSync(rootPath, { withFileTypes: true })
       .filter(e => e.isDirectory() && !EXCLUDE_DIRS.has(e.name))
-      .map(e => e.name);
+      .map(e => e.name)
+      // readdir order is whatever the filesystem returns, which differs between
+      // machines; sorted, the same repository always produces the same file.
+      .sort();
   } catch {
     // ignore
   }
