@@ -118,38 +118,75 @@ function hasPythonTestFiles(rootPath: string): boolean {
   return false;
 }
 
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  '.ts': 'TypeScript',
+  '.tsx': 'TypeScript',
+  '.js': 'JavaScript',
+  '.jsx': 'JavaScript',
+  '.py': 'Python',
+  '.go': 'Go',
+  '.rs': 'Rust',
+  '.java': 'Java',
+};
+
+// Ties go to the language listed first.
+const LANGUAGE_ORDER = ['TypeScript', 'JavaScript', 'Python', 'Go', 'Rust', 'Java'];
+
+export interface WalkLimits {
+  /** Folders deeper than this below the root are not opened (the root is depth 0). */
+  maxDepth: number;
+  /** The walk stops after this many files, whatever their extension. */
+  maxFiles: number;
+}
+
+export const DEFAULT_WALK_LIMITS: WalkLimits = { maxDepth: 8, maxFiles: 10_000 };
+
+/**
+ * Source files per language, counted breadth first over the whole tree.
+ * EXCLUDE_DIRS are skipped at every level, symlinks are not followed, and
+ * entries are visited in sorted order so the same tree always gives the same
+ * counts, even when a cap cuts the walk short.
+ */
+export function countLanguageFiles(rootPath: string, limits: WalkLimits = DEFAULT_WALK_LIMITS): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: rootPath, depth: 0 }];
+  let files = 0;
+
+  while (queue.length > 0) {
+    const { dir, depth } = queue.shift()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!EXCLUDE_DIRS.has(entry.name) && depth < limits.maxDepth) {
+          queue.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
+        }
+      } else if (entry.isFile()) {
+        if (files >= limits.maxFiles) return counts;
+        files++;
+        const lang = LANGUAGE_BY_EXTENSION[path.extname(entry.name).toLowerCase()];
+        if (lang) counts[lang] = (counts[lang] ?? 0) + 1;
+      }
+    }
+  }
+
+  return counts;
+}
+
 function detectPrimaryLanguage(rootPath: string, hasTsConfig: boolean): string {
   if (hasTsConfig) return 'TypeScript';
 
-  const srcPath = path.join(rootPath, 'src');
-  const searchDir = exists(srcPath) ? srcPath : rootPath;
-
-  const extCounts: Record<string, number> = {};
-  try {
-    const entries = fs.readdirSync(searchDir);
-    for (const entry of entries) {
-      const ext = path.extname(entry).toLowerCase();
-      if (ext) extCounts[ext] = (extCounts[ext] ?? 0) + 1;
-    }
-  } catch {
-    // ignore read errors
-  }
-
-  const langMap: Record<string, string> = {
-    '.ts': 'TypeScript',
-    '.tsx': 'TypeScript',
-    '.js': 'JavaScript',
-    '.jsx': 'JavaScript',
-    '.py': 'Python',
-    '.go': 'Go',
-    '.rs': 'Rust',
-    '.java': 'Java',
-  };
-
+  const counts = countLanguageFiles(rootPath);
   let best = '';
   let bestCount = 0;
-  for (const [ext, lang] of Object.entries(langMap)) {
-    const count = extCounts[ext] ?? 0;
+  for (const lang of LANGUAGE_ORDER) {
+    const count = counts[lang] ?? 0;
     if (count > bestCount) {
       bestCount = count;
       best = lang;
