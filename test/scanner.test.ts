@@ -5,7 +5,7 @@
  * the limits the README states. A limit pinned by a test changes only when
  * someone changes it on purpose.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -65,12 +65,35 @@ describe('a JavaScript app with Yarn and flat ESLint config', async () => {
   it('finds Mocha named in an npm script', () => {
     expect(ctx.testFramework).toBe('Mocha');
   });
-  it('does not recognise eslint.config.js (documented limit) and falls through to Prettier', () => {
-    expect(ctx.linter).toBe('Prettier');
-    expect(ctx.keyFiles).not.toContain('eslint.config.js');
+  it('detects ESLint from eslint.config.js with eslint absent from devDependencies, ahead of Prettier', () => {
+    expect(ctx.linter).toBe('ESLint');
+    expect(ctx.keyFiles).toEqual(['package.json', 'eslint.config.js']);
   });
   it('reports no description when package.json has none', () => {
     expect(ctx.description).toBe('');
+  });
+});
+
+describe('each ESLint flat config name, alone in a directory', () => {
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach(d => rmSync(d, { recursive: true, force: true })));
+
+  it.each(['eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs', 'eslint.config.ts'])('%s is ESLint and a key file', async (name) => {
+    const dir = mkdtempSync(join(tmpdir(), 'anchorfile-flat-'));
+    dirs.push(dir);
+    writeFileSync(join(dir, name), 'export default [];\n');
+    const ctx = await scanRepo(dir, false);
+    expect(ctx.linter).toBe('ESLint');
+    expect(ctx.keyFiles).toEqual([name]);
+  });
+
+  it('lists both files when a legacy and a flat config sit side by side', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'anchorfile-flat-'));
+    dirs.push(dir);
+    writeFileSync(join(dir, '.eslintrc.json'), '{}\n');
+    writeFileSync(join(dir, 'eslint.config.mjs'), 'export default [];\n');
+    const ctx = await scanRepo(dir, false);
+    expect(ctx.keyFiles).toEqual(['.eslintrc.json', 'eslint.config.mjs']);
   });
 });
 

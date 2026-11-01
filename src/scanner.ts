@@ -62,6 +62,8 @@ const KEY_FILE_CANDIDATES = [
 ];
 
 const ESLINTRC_PATTERNS = ['.eslintrc', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc.json', '.eslintrc.yml', '.eslintrc.yaml'];
+// Flat config, the default since ESLint 9.
+const ESLINT_FLAT_PATTERNS = ['eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs', 'eslint.config.ts'];
 
 const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next']);
 
@@ -193,7 +195,7 @@ function detectLinter(devDeps: string[], rootPath: string): string {
   if (devDeps.includes('biome')) return 'Biome';
   if (devDeps.includes('@biomejs/biome')) return 'Biome';
   if (devDeps.includes('eslint')) return 'ESLint';
-  for (const pattern of ESLINTRC_PATTERNS) {
+  for (const pattern of [...ESLINTRC_PATTERNS, ...ESLINT_FLAT_PATTERNS]) {
     if (exists(path.join(rootPath, pattern))) return 'ESLint';
   }
   if (devDeps.includes('prettier')) return 'Prettier';
@@ -268,11 +270,11 @@ export async function scanRepo(rootPath: string, verbose: boolean): Promise<Repo
       keyFiles.push(candidate);
     }
   }
-  for (const pattern of ESLINTRC_PATTERNS) {
-    if (exists(path.join(rootPath, pattern))) {
-      keyFiles.push(pattern);
-      break;
-    }
+  // At most one legacy and one flat config file; a repository part-way through
+  // the migration can have both, and both are worth knowing about.
+  for (const patterns of [ESLINTRC_PATTERNS, ESLINT_FLAT_PATTERNS]) {
+    const found = patterns.find(p => exists(path.join(rootPath, p)));
+    if (found) keyFiles.push(found);
   }
   log(`Key files: ${keyFiles.join(', ')}`);
 
