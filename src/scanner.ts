@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { RepoContext } from './types';
+import { parsePyprojectDependencies } from './pyproject';
 
 const FRAMEWORK_MAP: Record<string, string> = {
   react: 'React',
@@ -61,6 +62,8 @@ const KEY_FILE_CANDIDATES = [
 ];
 
 const ESLINTRC_PATTERNS = ['.eslintrc', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc.json', '.eslintrc.yml', '.eslintrc.yaml'];
+// Flat config, the default since ESLint 9.
+const ESLINT_FLAT_PATTERNS = ['eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs', 'eslint.config.ts'];
 
 const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next']);
 
@@ -96,6 +99,14 @@ function readRequirementsTxt(rootPath: string): string[] {
   }
 }
 
+function readPyprojectToml(rootPath: string): string[] {
+  try {
+    return parsePyprojectDependencies(fs.readFileSync(path.join(rootPath, 'pyproject.toml'), 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
 function hasPythonTestFiles(rootPath: string): boolean {
   const testPattern = /^(test_.+|.+_test)\.py$/;
   try {
@@ -107,38 +118,75 @@ function hasPythonTestFiles(rootPath: string): boolean {
   return false;
 }
 
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  '.ts': 'TypeScript',
+  '.tsx': 'TypeScript',
+  '.js': 'JavaScript',
+  '.jsx': 'JavaScript',
+  '.py': 'Python',
+  '.go': 'Go',
+  '.rs': 'Rust',
+  '.java': 'Java',
+};
+
+// Ties go to the language listed first.
+const LANGUAGE_ORDER = ['TypeScript', 'JavaScript', 'Python', 'Go', 'Rust', 'Java'];
+
+export interface WalkLimits {
+  /** Folders deeper than this below the root are not opened (the root is depth 0). */
+  maxDepth: number;
+  /** The walk stops after this many files, whatever their extension. */
+  maxFiles: number;
+}
+
+export const DEFAULT_WALK_LIMITS: WalkLimits = { maxDepth: 8, maxFiles: 10_000 };
+
+/**
+ * Source files per language, counted breadth first over the whole tree.
+ * EXCLUDE_DIRS are skipped at every level, symlinks are not followed, and
+ * entries are visited in sorted order so the same tree always gives the same
+ * counts, even when a cap cuts the walk short.
+ */
+export function countLanguageFiles(rootPath: string, limits: WalkLimits = DEFAULT_WALK_LIMITS): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: rootPath, depth: 0 }];
+  let files = 0;
+
+  while (queue.length > 0) {
+    const { dir, depth } = queue.shift()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!EXCLUDE_DIRS.has(entry.name) && depth < limits.maxDepth) {
+          queue.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
+        }
+      } else if (entry.isFile()) {
+        if (files >= limits.maxFiles) return counts;
+        files++;
+        const lang = LANGUAGE_BY_EXTENSION[path.extname(entry.name).toLowerCase()];
+        if (lang) counts[lang] = (counts[lang] ?? 0) + 1;
+      }
+    }
+  }
+
+  return counts;
+}
+
 function detectPrimaryLanguage(rootPath: string, hasTsConfig: boolean): string {
   if (hasTsConfig) return 'TypeScript';
 
-  const srcPath = path.join(rootPath, 'src');
-  const searchDir = exists(srcPath) ? srcPath : rootPath;
-
-  const extCounts: Record<string, number> = {};
-  try {
-    const entries = fs.readdirSync(searchDir);
-    for (const entry of entries) {
-      const ext = path.extname(entry).toLowerCase();
-      if (ext) extCounts[ext] = (extCounts[ext] ?? 0) + 1;
-    }
-  } catch {
-    // ignore read errors
-  }
-
-  const langMap: Record<string, string> = {
-    '.ts': 'TypeScript',
-    '.tsx': 'TypeScript',
-    '.js': 'JavaScript',
-    '.jsx': 'JavaScript',
-    '.py': 'Python',
-    '.go': 'Go',
-    '.rs': 'Rust',
-    '.java': 'Java',
-  };
-
+  const counts = countLanguageFiles(rootPath);
   let best = '';
   let bestCount = 0;
-  for (const [ext, lang] of Object.entries(langMap)) {
-    const count = extCounts[ext] ?? 0;
+  for (const lang of LANGUAGE_ORDER) {
+    const count = counts[lang] ?? 0;
     if (count > bestCount) {
       bestCount = count;
       best = lang;
@@ -184,7 +232,7 @@ function detectLinter(devDeps: string[], rootPath: string): string {
   if (devDeps.includes('biome')) return 'Biome';
   if (devDeps.includes('@biomejs/biome')) return 'Biome';
   if (devDeps.includes('eslint')) return 'ESLint';
-  for (const pattern of ESLINTRC_PATTERNS) {
+  for (const pattern of [...ESLINTRC_PATTERNS, ...ESLINT_FLAT_PATTERNS]) {
     if (exists(path.join(rootPath, pattern))) return 'ESLint';
   }
   if (devDeps.includes('prettier')) return 'Prettier';
@@ -217,7 +265,11 @@ export async function scanRepo(rootPath: string, verbose: boolean): Promise<Repo
   const primaryLanguage = detectPrimaryLanguage(rootPath, hasTsConfig);
   log(`Language: ${primaryLanguage}`);
 
-  const pythonDeps = readRequirementsTxt(rootPath);
+  const requirementsDeps = readRequirementsTxt(rootPath);
+  const pythonDeps = [
+    ...requirementsDeps,
+    ...readPyprojectToml(rootPath).filter(d => !requirementsDeps.includes(d)),
+  ];
   const allDeps = [...depNames, ...devDepNames, ...pythonDeps];
   const frameworks = detectFrameworks(allDeps);
   log(`Frameworks: ${frameworks.join(', ') || 'none'}`);
@@ -255,11 +307,11 @@ export async function scanRepo(rootPath: string, verbose: boolean): Promise<Repo
       keyFiles.push(candidate);
     }
   }
-  for (const pattern of ESLINTRC_PATTERNS) {
-    if (exists(path.join(rootPath, pattern))) {
-      keyFiles.push(pattern);
-      break;
-    }
+  // At most one legacy and one flat config file; a repository part-way through
+  // the migration can have both, and both are worth knowing about.
+  for (const patterns of [ESLINTRC_PATTERNS, ESLINT_FLAT_PATTERNS]) {
+    const found = patterns.find(p => exists(path.join(rootPath, p)));
+    if (found) keyFiles.push(found);
   }
   log(`Key files: ${keyFiles.join(', ')}`);
 
