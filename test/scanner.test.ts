@@ -2,9 +2,8 @@
  * The scanner, run against small fixture repositories in test/fixtures.
  *
  * Each fixture pins what Anchorfile reports for one kind of project, including
- * the limits the README states: flat ESLint config is not recognised, and
- * Python dependencies come from requirements.txt only. A limit pinned by a test
- * changes only when someone changes it on purpose.
+ * the limits the README states. A limit pinned by a test changes only when
+ * someone changes it on purpose.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -101,16 +100,49 @@ describe('a Python app with requirements.txt, pyproject.toml and tests/', async 
     expect(ctx.projectName).toBe('python-app');
   });
   it('reads requirements.txt: case, version pins, extras, comments and -r lines', () => {
-    expect(ctx.frameworks).toEqual(['Flask', 'NumPy', 'Pandas']);
+    expect(ctx.frameworks.slice(0, 3)).toEqual(['Flask', 'NumPy', 'Pandas']);
   });
-  it('does not read pyproject.toml dependencies (documented limit)', () => {
-    expect(ctx.frameworks).not.toContain('FastAPI');
+  it('adds pyproject.toml [project] dependencies after the requirements.txt ones', () => {
+    expect(ctx.frameworks).toEqual(['Flask', 'NumPy', 'Pandas', 'FastAPI']);
   });
   it('calls the package manager pip', () => {
     expect(ctx.packageManager).toBe('pip');
   });
   it('finds pytest from test_*.py files in tests/', () => {
     expect(ctx.testFramework).toBe('pytest');
+  });
+});
+
+describe('a PEP 621 project with only pyproject.toml', async () => {
+  const ctx = await scanRepo(fixture('pep621-app'), false);
+
+  it('reads [project] dependencies across lines, with extras, spaces and markers', () => {
+    expect(ctx.frameworks.slice(0, 3)).toEqual(['FastAPI', 'Pandas', 'NumPy']);
+  });
+  it('reads [project.optional-dependencies] groups after them', () => {
+    expect(ctx.frameworks).toEqual(['FastAPI', 'Pandas', 'NumPy', 'SQLAlchemy']);
+  });
+  it('ignores a dependencies key in a [tool.*] table', () => {
+    expect(ctx.frameworks).not.toContain('Django');
+  });
+  it('finds pytest from an optional-dependencies group, with no test files present', () => {
+    expect(ctx.hasTests).toBe(true);
+    expect(ctx.testFramework).toBe('pytest');
+  });
+  it('lists pyproject.toml as a key file and calls the package manager pip', () => {
+    expect(ctx.keyFiles).toEqual(['pyproject.toml']);
+    expect(ctx.packageManager).toBe('pip');
+  });
+});
+
+describe('a Poetry project', async () => {
+  const ctx = await scanRepo(fixture('poetry-app'), false);
+
+  it('reads [tool.poetry.dependencies] keys, bare or quoted, skipping python', () => {
+    expect(ctx.frameworks).toEqual(['Django', 'SQLAlchemy']);
+  });
+  it('does not read [tool.poetry.group.*.dependencies] (documented limit), so pytest there is not seen', () => {
+    expect(ctx.hasTests).toBe(false);
   });
 });
 

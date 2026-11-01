@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { RepoContext } from './types';
+import { parsePyprojectDependencies } from './pyproject';
 
 const FRAMEWORK_MAP: Record<string, string> = {
   react: 'React',
@@ -91,6 +92,14 @@ function readRequirementsTxt(rootPath: string): string[] {
       .filter(l => l && !l.startsWith('#') && !l.startsWith('-'))
       .map(l => l.toLowerCase().split(/[=<>!~\[@]/)[0].trim())
       .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function readPyprojectToml(rootPath: string): string[] {
+  try {
+    return parsePyprojectDependencies(fs.readFileSync(path.join(rootPath, 'pyproject.toml'), 'utf-8'));
   } catch {
     return [];
   }
@@ -217,7 +226,11 @@ export async function scanRepo(rootPath: string, verbose: boolean): Promise<Repo
   const primaryLanguage = detectPrimaryLanguage(rootPath, hasTsConfig);
   log(`Language: ${primaryLanguage}`);
 
-  const pythonDeps = readRequirementsTxt(rootPath);
+  const requirementsDeps = readRequirementsTxt(rootPath);
+  const pythonDeps = [
+    ...requirementsDeps,
+    ...readPyprojectToml(rootPath).filter(d => !requirementsDeps.includes(d)),
+  ];
   const allDeps = [...depNames, ...devDepNames, ...pythonDeps];
   const frameworks = detectFrameworks(allDeps);
   log(`Frameworks: ${frameworks.join(', ') || 'none'}`);
